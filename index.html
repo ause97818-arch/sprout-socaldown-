@@ -946,9 +946,41 @@
       '</div>';
   }
 
-  function renderInstaMP3(json){
+function renderInstaMP3(json){
     var audioUrl     = json.data.urls[0];
     var thumbnailUrl = json.data.thumbnail || '';
+
+    // Force MP3 download via blob to ensure .mp3 extension & correct MIME type
+    function triggerMp3Download(){
+      var btn = document.getElementById('instaMP3DownloadBtn');
+      if(btn){ btn.textContent = 'Preparing…'; btn.style.pointerEvents = 'none'; btn.style.opacity = '0.7'; }
+      fetch(audioUrl)
+        .then(function(res){
+          if(!res.ok) throw new Error('Fetch failed: ' + res.status);
+          return res.blob();
+        })
+        .then(function(blob){
+          // Force audio/mpeg MIME regardless of server Content-Type
+          var mp3Blob = new Blob([blob], { type: 'audio/mpeg' });
+          var blobUrl = URL.createObjectURL(mp3Blob);
+          var a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = 'instagram_audio_' + Date.now() + '.mp3';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(function(){ URL.revokeObjectURL(blobUrl); }, 10000);
+        })
+        .catch(function(){
+          // Fallback: open in new tab if blob fetch blocked (CORS)
+          window.open(audioUrl, '_blank');
+        })
+        .finally(function(){
+          var btn = document.getElementById('instaMP3DownloadBtn');
+          if(btn){ btn.innerHTML = '<i class="fa-solid fa-circle-down"></i> DOWNLOAD MP3 AUDIO'; btn.style.pointerEvents = ''; btn.style.opacity = ''; }
+        });
+    }
+
     resultInner.innerHTML =
       '<div class="w-full max-w-md mx-auto">' +
         buildHeaderMeta('Instagram MP3') +
@@ -959,17 +991,20 @@
               : '<div class="w-16 h-16 rounded-xl bg-[#0F1610] border border-[rgba(228,253,151,0.1)] flex items-center justify-center shrink-0"><i class="fa-brands fa-instagram text-2xl" style="color:#E1306C"></i></div>') +
             '<div class="flex-1 min-w-0">' +
               '<h4 class="text-[#E4FD97] font-bold text-base truncate uppercase tracking-wide">Instagram Audio Track</h4>' +
-              '<p class="text-gray-400 text-xs truncate">Source: Instagram Reel/Video</p>' +
+              '<p class="text-gray-400 text-xs truncate">MP3 · Source: Instagram Reel/Video</p>' +
             '</div>' +
-            '<span class="bg-[#E4FD97] text-[#131C14] text-[10px] font-black px-2 py-1 rounded-md tracking-wider shrink-0 whitespace-nowrap">AUDIO</span>' +
+            '<span class="bg-[#E4FD97] text-[#131C14] text-[10px] font-black px-2 py-1 rounded-md tracking-wider shrink-0 whitespace-nowrap">MP3</span>' +
           '</div>' +
           '<audio src="' + audioUrl + '" controls class="w-full mt-4 accent-[#E4FD97] rounded-full"></audio>' +
-          '<a href="' + audioUrl + '" target="_blank" ' +
-            'class="flex items-center justify-center gap-2 mt-4 w-full py-3 bg-gradient-to-r from-[#E4FD97] to-[#b8d46e] text-[#131C14] font-bold rounded-xl transition-all duration-300 hover:opacity-90 shadow-[0_0_15px_rgba(228,253,151,0.2)] text-sm uppercase tracking-wider">' +
-            '<i class="fa-solid fa-circle-down"></i> DOWNLOAD AUDIO / MP4' +
-          '</a>' +
+          '<button id="instaMP3DownloadBtn" ' +
+            'class="flex items-center justify-center gap-2 mt-4 w-full py-3 bg-gradient-to-r from-[#E4FD97] to-[#b8d46e] text-[#131C14] font-bold rounded-xl transition-all duration-300 hover:opacity-90 shadow-[0_0_15px_rgba(228,253,151,0.2)] text-sm uppercase tracking-wider cursor-pointer border-0">' +
+            '<i class="fa-solid fa-circle-down"></i> DOWNLOAD MP3 AUDIO' +
+          '</button>' +
         '</div>' +
       '</div>';
+
+    // Attach click handler after innerHTML is set
+    document.getElementById('instaMP3DownloadBtn').addEventListener('click', triggerMp3Download);
   }
 
   function renderResult(json){
@@ -1153,8 +1188,7 @@
             'onmouseover="this.style.filter=\'brightness(1.07)\'" onmouseout="this.style.filter=\'none\'">' +
             '<i class="fa-solid fa-circle-down"></i> Download' +
           '</a>' +
-        '</div>';
-    } else {
+        '</div>';} else {
       mediaPreviewContent.innerHTML =
         '<div style="background:rgba(27,39,26,0.85);border:1px solid rgba(228,253,151,0.18);border-radius:1.25rem;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);overflow:hidden;">' +
           '<div style="display:flex;align-items:center;justify-content:space-between;padding:.85rem 1rem .6rem;">' +
@@ -1175,13 +1209,44 @@
             '</div>' +
           '</div>' +
           '<div style="padding:.75rem 1rem;">' +
-            '<a href="' + url + '" target="_blank" rel="noopener noreferrer" ' +
-              'style="display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.7rem;background:var(--lime);color:#10160F;font-family:Syne,sans-serif;font-weight:800;font-size:11px;letter-spacing:.08em;text-transform:uppercase;border-radius:.75rem;text-decoration:none;transition:filter .2s;" ' +
+            '<button id="previewDlBtn" ' +
+              'style="display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.7rem;background:var(--lime);color:#10160F;font-family:Syne,sans-serif;font-weight:800;font-size:11px;letter-spacing:.08em;text-transform:uppercase;border-radius:.75rem;border:0;cursor:pointer;transition:filter .2s;" ' +
               'onmouseover="this.style.filter=\'brightness(1.07)\'" onmouseout="this.style.filter=\'none\'">' +
-              '<i class="fa-solid fa-circle-down"></i> Download' +
-            '</a>' +
+              '<i class="fa-solid fa-circle-down"></i> ' + (item.platform === 'instamp3' ? 'Download MP3' : 'Download') +
+            '</button>' +
           '</div>' +
         '</div>';
+
+      // Wire up preview download button
+      var previewDlBtn = document.getElementById('previewDlBtn');
+      if(previewDlBtn){
+        previewDlBtn.addEventListener('click', function(){
+          if(item.platform === 'instamp3'){
+            previewDlBtn.textContent = 'Preparing…';
+            previewDlBtn.style.pointerEvents = 'none';
+            fetch(url)
+              .then(function(res){ return res.blob(); })
+              .then(function(blob){
+                var mp3Blob = new Blob([blob], { type: 'audio/mpeg' });
+                var blobUrl = URL.createObjectURL(mp3Blob);
+                var a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = 'instagram_audio_' + Date.now() + '.mp3';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(function(){ URL.revokeObjectURL(blobUrl); }, 10000);
+              })
+              .catch(function(){ window.open(url, '_blank'); })
+              .finally(function(){
+                previewDlBtn.innerHTML = '<i class="fa-solid fa-circle-down"></i> Download MP3';
+                previewDlBtn.style.pointerEvents = '';
+              });
+          } else {
+            window.open(url, '_blank');
+          }
+        });
+      }
     }
 
     mediaPreviewOverlay.classList.add('open');
