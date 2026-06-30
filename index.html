@@ -7,6 +7,26 @@
 <meta name="description" content="Download videos, reels and tracks from Instagram, Facebook, YouTube, Snapchat and Spotify in one place." />
 <link rel="icon" type="image/jpeg" href="https://cdnfile.pages.dev/77c5e57cf7.jpg">
 <script src="https://cdn.tailwindcss.com"></script>
+<script>
+  // ── FFmpeg.wasm loader (lazy, loaded only once, used for true MP3 extraction) ──
+  window.__ffmpegLoaderPromise = null;
+  function loadFFmpegLib(){
+    if(window.__ffmpegLoaderPromise) return window.__ffmpegLoaderPromise;
+    window.__ffmpegLoaderPromise = new Promise(function(resolve, reject){
+      if(window.FFmpeg && window.FFmpeg.createFFmpeg){ resolve(window.FFmpeg); return; }
+      var s = document.createElement('script');
+      s.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js';
+      s.async = true;
+      s.onload = function(){
+        if(window.FFmpeg && window.FFmpeg.createFFmpeg){ resolve(window.FFmpeg); }
+        else { reject(new Error('FFmpeg script loaded but global FFmpeg object missing.')); }
+      };
+      s.onerror = function(){ reject(new Error('Failed to load FFmpeg.wasm from CDN.')); };
+      document.head.appendChild(s);
+    });
+    return window.__ffmpegLoaderPromise;
+  }
+</script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -949,7 +969,6 @@
   function renderInstaMP3(json){
     var audioUrl     = json.data.urls[0];
     var thumbnailUrl = json.data.thumbnail || '';
-
     resultInner.innerHTML =
       '<div class="w-full max-w-md mx-auto">' +
         buildHeaderMeta('Instagram MP3') +
@@ -960,55 +979,111 @@
               : '<div class="w-16 h-16 rounded-xl bg-[#0F1610] border border-[rgba(228,253,151,0.1)] flex items-center justify-center shrink-0"><i class="fa-brands fa-instagram text-2xl" style="color:#E1306C"></i></div>') +
             '<div class="flex-1 min-w-0">' +
               '<h4 class="text-[#E4FD97] font-bold text-base truncate uppercase tracking-wide">Instagram Audio Track</h4>' +
-              '<p class="text-gray-400 text-xs truncate">MP3 · Source: Instagram Reel/Video</p>' +
+              '<p class="text-gray-400 text-xs truncate">Source: Instagram Reel/Video</p>' +
             '</div>' +
-            '<span class="bg-[#E4FD97] text-[#131C14] text-[10px] font-black px-2 py-1 rounded-md tracking-wider shrink-0 whitespace-nowrap">MP3</span>' +
+            '<span class="bg-[#E4FD97] text-[#131C14] text-[10px] font-black px-2 py-1 rounded-md tracking-wider shrink-0 whitespace-nowrap">AUDIO</span>' +
           '</div>' +
           '<audio src="' + audioUrl + '" controls class="w-full mt-4 accent-[#E4FD97] rounded-full"></audio>' +
-          '<button id="instaMP3Btn" ' +
-            'class="flex items-center justify-center gap-2 mt-4 w-full py-3 bg-gradient-to-r from-[#E4FD97] to-[#b8d46e] text-[#131C14] font-bold rounded-xl transition-all duration-300 hover:opacity-90 shadow-[0_0_15px_rgba(228,253,151,0.2)] text-sm uppercase tracking-wider cursor-pointer border-0">' +
-            '<i class="fa-solid fa-circle-down"></i> DOWNLOAD MP3 AUDIO' +
+          '<button id="instaMp3ConvertBtn" data-src="' + audioUrl + '" type="button" ' +
+            'class="flex items-center justify-center gap-2 mt-4 w-full py-3 bg-gradient-to-r from-[#E4FD97] to-[#b8d46e] text-[#131C14] font-bold rounded-xl transition-all duration-300 hover:opacity-90 shadow-[0_0_15px_rgba(228,253,151,0.2)] text-sm uppercase tracking-wider disabled:opacity-60 disabled:cursor-not-allowed">' +
+            '<i class="fa-solid fa-circle-down"></i> <span id="instaMp3BtnLabel">DOWNLOAD MP3 AUDIO</span>' +
           '</button>' +
+          '<p id="instaMp3Status" class="text-center text-[11px] text-[#8FA386] mt-2 min-h-[14px]"></p>' +
         '</div>' +
       '</div>';
 
-    // ── Blob-based forced MP3 download ────────────────────────────────
-    var btn = document.getElementById('instaMP3Btn');
-    btn.addEventListener('click', function(){
-      btn.disabled = true;
-      btn.innerHTML = '<span style="width:14px;height:14px;border-radius:50%;border:2px solid rgba(16,22,15,0.25);border-top-color:#10160F;animation:spin .7s linear infinite;display:inline-block;"></span> Preparing MP3…';
-
-      fetch(audioUrl)
-        .then(function(res){
-          if(!res.ok) throw new Error('HTTP ' + res.status);
-          return res.blob();
-        })
-        .then(function(blob){
-          // Force audio/mpeg MIME — overrides MP4 content-type from server
-          var mp3Blob   = new Blob([blob], { type: 'audio/mpeg' });
-          var objectUrl = URL.createObjectURL(mp3Blob);
-          var a         = document.createElement('a');
-          a.href        = objectUrl;
-          a.download    = 'instagram_audio_' + Date.now() + '.mp3';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(function(){ URL.revokeObjectURL(objectUrl); }, 15000);
-          btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Downloaded!';
-          setTimeout(function(){
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-circle-down"></i> DOWNLOAD MP3 AUDIO';
-          }, 3000);
-        })
-        .catch(function(err){
-          console.warn('Blob fetch failed, falling back to direct open:', err);
-          // CORS fallback — opens in new tab as last resort
-          window.open(audioUrl, '_blank');
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fa-solid fa-circle-down"></i> DOWNLOAD MP3 AUDIO';
-        });
-    });
+    var convertBtn = document.getElementById('instaMp3ConvertBtn');
+    if(convertBtn){
+      convertBtn.addEventListener('click', function(){
+        convertInstaToRealMp3(convertBtn.getAttribute('data-src'));
+      });
+    }
   }
+
+  // ── True MP4 -> MP3 audio extraction using FFmpeg.wasm ──────────────────
+  async function convertInstaToRealMp3(sourceUrl){
+    var btn       = document.getElementById('instaMp3ConvertBtn');
+    var btnLabel  = document.getElementById('instaMp3BtnLabel');
+    var statusEl  = document.getElementById('instaMp3Status');
+
+    if(!btn || !btnLabel) return;
+
+    function setStatus(msg){ if(statusEl) statusEl.textContent = msg; }
+
+    btn.disabled = true;
+    var originalLabel = btnLabel.textContent;
+
+    try {
+      btnLabel.textContent = 'Loading converter...';
+      setStatus('Initializing FFmpeg engine (first time may take a few seconds)...');
+
+      var FFmpegLib = await loadFFmpegLib();
+      var createFFmpeg = FFmpegLib.createFFmpeg;
+      var fetchFile     = FFmpegLib.fetchFile;
+
+      if(!window.__instaFFmpegInstance){
+        window.__instaFFmpegInstance = createFFmpeg({
+          log: false,
+          corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+          progress: function(p){
+            if(p && typeof p.ratio === 'number' && p.ratio >= 0){
+              setStatus('Converting to MP3... ' + Math.min(100, Math.round(p.ratio * 100)) + '%');
+            }
+          }
+        });
+      }
+      var ffmpeg = window.__instaFFmpegInstance;
+
+      if(!ffmpeg.isLoaded()){
+        btnLabel.textContent = 'Loading converter...';
+        setStatus('Downloading FFmpeg WASM core...');
+        await ffmpeg.load();
+      }
+
+      btnLabel.textContent = 'Fetching video...';
+      setStatus('Fetching source media from server...');
+      var fileData = await fetchFile(sourceUrl);
+
+      ffmpeg.FS('writeFile', 'input.mp4', fileData);
+
+      btnLabel.textContent = 'Converting to MP3...';
+      setStatus('Extracting pure MP3 audio track, please wait...');
+
+      await ffmpeg.run('-i', 'input.mp4', '-vn', '-acodec', 'libmp3lame', '-q:a', '2', 'output.mp3');
+
+      var outputData = ffmpeg.FS('readFile', 'output.mp3');
+
+      // Clean up virtual filesystem to free memory for next conversion
+      try { ffmpeg.FS('unlink', 'input.mp4'); } catch(e){}
+      try { ffmpeg.FS('unlink', 'output.mp3'); } catch(e){}
+
+      var mp3Blob = new Blob([outputData.buffer], { type: 'audio/mpeg' });
+      var blobUrl = URL.createObjectURL(mp3Blob);
+
+      var a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = 'instagram-audio-' + Date.now() + '.mp3';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(blobUrl); }, 10000);
+
+      btnLabel.textContent = 'Downloaded!';
+      setStatus('Pure MP3 file saved successfully.');
+      setTimeout(function(){
+        btnLabel.textContent = originalLabel;
+        setStatus('');
+        btn.disabled = false;
+      }, 2500);
+
+    } catch(err){
+      console.error('Insta MP3 conversion failed:', err);
+      btnLabel.textContent = originalLabel;
+      setStatus('Conversion failed: ' + (err && err.message ? err.message : 'Unknown error') + '. Please try again.');
+      btn.disabled = false;
+    }
+  }
+
   function renderResult(json){
     if(activePlatform === 'instagram'){
       if(!json.data || !json.data.urls || !json.data.urls.length) throw new Error('No downloadable media found for this link.');
